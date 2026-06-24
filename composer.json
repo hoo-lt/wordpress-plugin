@@ -1,0 +1,37 @@
+{
+    "name": "hoo-lt/wordpress-plugin",
+    "description": "WordPress plugin",
+    "type": "project",
+    "license": "GPL-3.0",
+    "autoload": {
+        "psr-4": {
+            "Hoo\\WordPressPlugin\\": "src/"
+        },
+        "files": [
+            "functions/functions.php"
+        ]
+    },
+    "authors": [
+        {
+            "name": "Baltic digital agency, UAB",
+            "email": "hoo@hoo.lt"
+        },
+        {
+            "name": "Viacheslav Ravdin",
+            "email": "viacheslav@hoo.lt"
+        }
+    ],
+    "repositories": [
+        {
+            "type": "vcs",
+            "url": "https://github.com/hoo-lt/wordpress-plugin-framework"
+        }
+    ],
+    "require": {
+        "php": ">=8.2",
+        "hoo-lt/wordpress-plugin-framework": "dev-main",
+        "php-di/php-di": "^7.1"
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
+}
