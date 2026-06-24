@@ -2,7 +2,41 @@
 
 A WordPress plugin scaffold built on the **Hoo WordPress Plugin Framework**, wired with [PHP-DI](https://php-di.org/). You declare hooks and routes in plain files; the framework registers them with WordPress and resolves your controllers (with their dependencies) out of the container.
 
-> **Per-plugin namespace.** This scaffold ships under the `Hoo\WordPressPlugin` namespace. Each plugin you create from it **must use its own unique namespace** (rename `Hoo\WordPressPlugin` in `src/`, `functions/functions.php`, the `use function` lines, and `composer.json`). The global helpers (`hook()`, `route()`, …) and the container holder live in that namespace, so a unique namespace is what keeps two plugins from colliding in the same WordPress install.
+> **Per-plugin namespace.** The global helpers (`hook()`, `route()`, …) and the container holder live in this plugin's namespace, so each plugin **must use a unique namespace** — that's what keeps two plugins from colliding in the same WordPress install. You don't do this by hand: [`scripts/setup.php`](scripts/setup.php) rewrites the placeholder `Hoo\WordPressPlugin` namespace (and the plugin identifiers) for you. See [Creating a new plugin](#creating-a-new-plugin).
+
+---
+
+## Creating a new plugin
+
+Scaffold a new plugin with Composer:
+
+```bash
+composer create-project hoo-lt/wordpress-plugin my-orders
+```
+
+When the install finishes, the `post-create-project-cmd` hook runs `scripts/setup.php`, which prompts you for (defaults derived from the directory name):
+
+| Prompt | Example | Applied to |
+|---|---|---|
+| Plugin slug (text domain) | `my-orders` | text domain, log source, entry filename |
+| PHP namespace | `MyOrders` (or `Acme\Orders`) | `src/`, helpers, `use function` lines, `composer.json` psr-4 |
+| Composer package | `acme/my-orders` | `composer.json` `name` |
+| Plugin display name | `My Orders` | the `Plugin Name:` header, this README |
+
+The script then:
+
+- rewrites `Hoo\WordPressPlugin` → your namespace everywhere (leaving the framework's `Hoo\WordPressPluginFramework` untouched),
+- swaps the placeholder identifiers (`'wordpress-plugin'`, `wordpress_plugin_migrations`, plugin name),
+- renames `wordpress-plugin.php` → `<slug>.php`,
+- updates `composer.json`, then **deletes itself**.
+
+Finish with:
+
+```bash
+composer dump-autoload
+```
+
+To re-run setup manually before committing (e.g. you took the defaults by accident): `php scripts/setup.php`.
 
 ---
 
@@ -275,5 +309,5 @@ These defaults are baked into the definition files — update them when you rena
 
 ## Notes
 
-- **Namespace rename is mandatory** for multi-plugin safety — see the note at the top.
+- **Namespace rename is mandatory** for multi-plugin safety — handled automatically by [`scripts/setup.php`](scripts/setup.php) when you `composer create-project`. See [Creating a new plugin](#creating-a-new-plugin).
 - **`currentUserCan` / `verifyNonce`**: the `MiddlewaresBuilder` instantiates these middlewares with no constructor arguments and expects the closure to configure them fluently. If the underlying middleware still requires constructor arguments, that pairing needs reconciling before use.

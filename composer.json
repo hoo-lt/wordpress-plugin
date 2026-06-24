@@ -11,6 +11,11 @@
             "functions/functions.php"
         ]
     },
+    "scripts": {
+        "post-create-project-cmd": [
+            "@php scripts/setup.php"
+        ]
+    },
     "authors": [
         {
             "name": "Baltic digital agency, UAB",
