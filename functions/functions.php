@@ -4,10 +4,15 @@ namespace Hoo\WordPressPlugin;
 
 use Closure;
 use Hoo\WordPressPluginFramework\{
+    Cache\CacheInterface,
+    Database\DatabaseInterface,
     Hooker\Hooks\HooksBuilderInterface,
     Hooker\HookerInterface,
     Router\Routes\RoutesBuilderInterface,
     Router\RouterInterface,
+    View\Model\ModelInterface,
+    View\ViewInterface,
+    View\ViewFactoryInterface,
 };
 use Psr\Container\ContainerInterface;
 
@@ -25,14 +30,27 @@ function file(?string $file = null): ?string
 
 function hook(): HooksBuilderInterface
 {
-    $hooksBuilder = container()->get(HooksBuilderInterface::class);
-    return $hooksBuilder;
+    return container()->get(HooksBuilderInterface::class);
 }
 
 function route(): RoutesBuilderInterface
 {
-    $routesBuilder = container()->get(RoutesBuilderInterface::class);
-    return $routesBuilder;
+    return container()->get(RoutesBuilderInterface::class);
+}
+
+function cache(): CacheInterface
+{
+    return container()->get(CacheInterface::class);
+}
+
+function database(): DatabaseInterface
+{
+    return container()->get(DatabaseInterface::class);
+}
+
+function view(string $view, ?ModelInterface $model = null): ViewInterface
+{
+    return container()->get(ViewFactoryInterface::class)->create($view, $model);
 }
 
 function controller(string $controller): object
