@@ -8,6 +8,12 @@
             "Hoo\\WordPressPlugin\\": "src/"
         },
         "files": [
+            "functions/http/client.php",
+            "functions/http/server.php",
+            "functions/http/url.php",
+            "functions/cache.php",
+            "functions/database.php",
+            "functions/view.php",
             "functions/functions.php"
         ]
     },

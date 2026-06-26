@@ -2,7 +2,7 @@
 
 A WordPress plugin scaffold built on the **Hoo WordPress Plugin Framework**, wired with [PHP-DI](https://php-di.org/). You declare hooks and routes in plain files; the framework registers them with WordPress and resolves your controllers (with their dependencies) out of the container.
 
-> **Per-plugin namespace.** The global helpers (`hook()`, `route()`, …) and the container holder live in this plugin's namespace, so each plugin **must use a unique namespace** — that's what keeps two plugins from colliding in the same WordPress install. You don't do this by hand: [`scripts/setup.php`](scripts/setup.php) rewrites the placeholder `Hoo\WordPressPlugin` namespace (and the plugin identifiers) for you. See [Creating a new plugin](#creating-a-new-plugin).
+> **Per-plugin namespace.** The global helpers (`hook()`, `route()`, …) and the `Application` (which holds the container, and is a static singleton) live in this plugin's namespace, so each plugin **must use a unique namespace** — that's what keeps two plugins' static state from colliding in the same WordPress install. You don't do this by hand: [`scripts/setup.php`](scripts/setup.php) rewrites the placeholder `Hoo\WordPressPlugin` namespace (and the plugin identifiers) for you. See [Creating a new plugin](#creating-a-new-plugin).
 
 ---
 
@@ -44,10 +44,10 @@ To re-run setup manually before committing (e.g. you took the defaults by accide
 
 ```
 wordpress-plugin/
-├── wordpress-plugin.php        # Entry point: plugin header + boot()
+├── wordpress-plugin.php        # Entry point: plugin header + Application::boot()
 ├── composer.json
 ├── functions/
-│   └── functions.php           # Global helpers: hook(), route(), controller(), action(), boot()…
+│   └── functions.php           # Global helpers: hook(), route(), controller(), action(), container(), dir(), file()…
 ├── container/
 │   ├── container.php           # Builds the PHP-DI container from every definitions file
 │   └── definitions/            # One bindings file per framework domain
@@ -55,6 +55,7 @@ wordpress-plugin/
 ├── hooks.php                   # Declare WordPress actions / filters / (de)activation
 ├── routes.php                  # Declare REST / admin-ajax / feed routes
 ├── src/                        # Your code: controllers, actions, services
+│   └── Application/Application.php  # Boots the plugin; static holder for container, dir, file
 ├── views/                      # Templates rendered by the View factory
 └── migrations/                 # Database migrations
 ```
@@ -65,7 +66,7 @@ wordpress-plugin/
 composer install
 ```
 
-`composer.json` must autoload the helpers as a `files` entry, or `hook()`/`route()`/`boot()` won't exist:
+`composer.json` must autoload the helpers as a `files` entry, or `hook()`/`route()`/`container()` won't exist (the `Application` class is PSR-4 autoloaded from `src/`, so it needs no `files` entry):
 
 ```json
 "autoload": {
@@ -88,10 +89,10 @@ defined('ABSPATH') || exit;
 
 require __DIR__ . '/vendor/autoload.php';
 
-Hoo\WordPressPlugin\boot(__FILE__);
+Hoo\WordPressPlugin\Application\Application::boot(__DIR__, __FILE__);
 ```
 
-`boot()` builds the container, then loads `hooks.php` and `routes.php`, builds them, and registers everything with WordPress. You never touch the container directly — you work in `hooks.php`, `routes.php`, and `src/`.
+`Application::boot()` builds the container, parks the `Application` as a static singleton (`Application::instance()`), then loads `hooks.php` and `routes.php`, builds them, and registers everything with WordPress. The instance holds the container, the plugin **dir**, and the plugin **file** — but you rarely touch it directly; you work in `hooks.php`, `routes.php`, and `src/`.
 
 ---
 
@@ -123,16 +124,16 @@ final class ItemsController
 }
 ```
 
-Two helpers turn a class reference into a hook/route handler:
+Two helpers turn a class reference into a hook/route handler. **Both return a lazy closure** — the container resolves the class (and its constructor dependencies) only when WordPress actually fires the hook/route, not when `hooks.php`/`routes.php` run at load:
 
-| Helper | Use for | Resolves |
+| Helper | Use for | Returns |
 |---|---|---|
-| `controller(Controller::class)` | classes with multiple methods | returns the resolved instance — append a method with first-class-callable syntax: `controller(X::class)->method(...)` |
-| `action(Action::class)` | single-purpose **invokable** classes (a class with `__invoke()`) | returns a closure that calls `__invoke` |
+| `controller(Controller::class, 'method')` | classes with multiple methods | a closure that resolves the controller and calls `method(...)` on invocation |
+| `action(Action::class)` | single-purpose **invokable** classes (a class with `__invoke()`) | a closure that resolves the class and calls `__invoke(...)` on invocation |
 
 ```php
-controller(ItemsController::class)->index(...)   // -> Closure bound to ItemsController::index
-action(RegisterTaxonomies::class)                // -> Closure calling RegisterTaxonomies::__invoke
+controller(ItemsController::class, 'index')   // -> Closure: resolve ItemsController, call ->index() when fired
+action(RegisterTaxonomies::class)             // -> Closure: resolve + call RegisterTaxonomies::__invoke when fired
 ```
 
 Route handlers receive a `RequestInterface`; hook handlers receive the WordPress hook arguments (the filtered value for filters, etc.).
@@ -141,7 +142,7 @@ Route handlers receive a `RequestInterface`; hook handlers receive the WordPress
 
 ## Hooks — `hooks.php`
 
-Return a hook builder chain. `hook()` gives you a fresh builder; every method returns a new builder, and `boot()` calls `build()` for you.
+Return a hook builder chain. `hook()` gives you a fresh builder; every method returns a new builder, and `Application::boot()` calls `build()` for you.
 
 ```php
 <?php
@@ -155,7 +156,7 @@ use Hoo\WordPressPlugin\Actions\Deactivate;
 
 return hook()
     ->action('init', action(RegisterTaxonomies::class))
-    ->filter('the_content', controller(ContentController::class)->append(...), 20)
+    ->filter('the_content', controller(ContentController::class, 'append'), 20)
     ->activation(file(), action(Activate::class))
     ->deactivation(file(), action(Deactivate::class));
 ```
@@ -187,10 +188,10 @@ use Hoo\WordPressPlugin\Controllers\FeedController;
 use Hoo\WordPressPluginFramework\Http\Method\Method;
 
 return route()
-    ->rest('plugin/v1', '/items', controller(ItemsController::class)->index(...), Method::Get)
-    ->rest('plugin/v1', '/items', controller(ItemsController::class)->store(...), Method::Post)
-    ->adminAjax('save_item', controller(ItemsController::class)->save(...))
-    ->feed('my_feed', controller(FeedController::class)->render(...));
+    ->rest('plugin/v1', '/items', controller(ItemsController::class, 'index'), Method::Get)
+    ->rest('plugin/v1', '/items', controller(ItemsController::class, 'store'), Method::Post)
+    ->adminAjax('save_item', controller(ItemsController::class, 'save'))
+    ->feed('my_feed', controller(FeedController::class, 'render'));
 ```
 
 Builder methods:
@@ -215,7 +216,7 @@ use Hoo\WordPressPluginFramework\Pipeline\Middlewares\MiddlewaresBuilder;
 ->rest(
     'plugin/v1',
     '/items',
-    controller(ItemsController::class)->store(...),
+    controller(ItemsController::class, 'store'),
     Method::Post,
     fn (MiddlewaresBuilder $mw) => $mw
         ->transaction(fn ($m) => $m)
@@ -275,7 +276,7 @@ return [
 ];
 ```
 
-> Controllers/actions referenced via `controller()`/`action()` are resolved **when `hooks.php`/`routes.php` run** (at plugin load, every request). Keep constructors light, or switch a handler to the lazy form if needed.
+> Controllers/actions referenced via `controller()`/`action()` are resolved **lazily** — the container builds them (and their constructor dependencies) only when WordPress fires the hook/route, **not** when `hooks.php`/`routes.php` run at plugin load. `hooks.php`/`routes.php` just declare closures.
 
 ### Configuration values to change per plugin
 
@@ -295,15 +296,20 @@ These defaults are baked into the definition files — update them when you rena
 
 ## Helper reference (`functions/functions.php`)
 
+Booting lives on the `Application` class, not in the helpers: `Hoo\WordPressPlugin\Application\Application::boot(string $dir, string $file)`.
+
 | Helper | Returns |
 |---|---|
-| `boot(string $file)` | builds the container, loads & registers `hooks.php` + `routes.php` |
 | `container(): ContainerInterface` | the PHP-DI container |
+| `dir(): string` | this plugin's root directory |
 | `file(): string` | this plugin's main file path |
 | `hook(): HooksBuilderInterface` | a fresh hook builder |
 | `route(): RoutesBuilderInterface` | a fresh route builder |
-| `controller(string $class): object` | the resolved controller (chain a method with `->method(...)`) |
-| `action(string $class): Closure` | a closure invoking the action's `__invoke` |
+| `controller(string $class, string $method): Closure` | lazy closure: resolves `$class`, calls `$method(...)` on invocation |
+| `action(string $class): Closure` | lazy closure: resolves `$class`, calls `__invoke(...)` on invocation |
+| `cache(): CacheInterface` | the cache service |
+| `database(): DatabaseInterface` | the database service |
+| `view(string $view, ?ModelInterface $model = null): ViewInterface` | a rendered view |
 
 ---
 

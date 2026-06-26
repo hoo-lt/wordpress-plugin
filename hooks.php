@@ -8,4 +8,4 @@ use function Hoo\WordPressPlugin\{
 
 return hook()
     ->action('init', action(RegisterFeed::class))
-    ->filter('the_content', controller(ContentController::class)->append(...), 20);
+    ->filter('the_content', controller(ContentController::class, 'append'), 20);

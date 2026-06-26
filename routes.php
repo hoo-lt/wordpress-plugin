@@ -8,4 +8,4 @@ use function Hoo\WordPressPlugin\{
 
 return route()
     ->rest('wordpress-plugin', 'test.json', action(RegisterFeed::class))
-    ->rest('wordpress-plugin', 'test.json',  controller(ContentController::class)->append(...), 20);
+    ->rest('wordpress-plugin', 'test.json',  controller(ContentController::class, 'append'), 20);
