@@ -152,6 +152,8 @@ action(RegisterTaxonomies::class)             // -> Closure: resolve + call Regi
 - **Action handler:** `(RequestInterface $request, ...$hookArgs)` — request first, then the WordPress action args.
 - **Filter handler:** `(RequestInterface $request, mixed $value, ...$hookArgs): mixed` — request first, then the filtered value (which you must return).
 
+Server `RequestInterface` and `ResponseInterface` each carry a `uuid(): UuidInterface` — a `Stringable` id stamped at creation. The request UUID identifies the inbound call; the response UUID identifies the outbound result. Read either with `(string) $request->uuid()` to tag log lines and correlate a request with its response. (The outbound `Http\Client` request/response do **not** have a UUID — this is server-side only.)
+
 ---
 
 ## Hooks — `hooks.php`
@@ -222,10 +224,11 @@ Builder methods:
 
 ## Middlewares
 
-Every hook and route method takes an optional **last argument**: a closure that receives a `MiddlewaresBuilder` and returns it. Middlewares wrap the handler in a pipeline (auth, validation, transactions, …) and run in the order declared.
+Every hook and route method takes an optional **last argument**: a closure that receives a `MiddlewaresBuilder` and returns it. Middlewares wrap the handler in a pipeline (auth, validation, transactions, …) and run in the order declared. Each builder method returns a **new** builder (it's `readonly`), so chain them.
 
 ```php
 use Hoo\WordPressPluginFramework\Pipeline\Middlewares\MiddlewaresBuilder;
+use Hoo\WordPressPluginFramework\Pipeline\Middlewares\CurrentUserCan\Capability\Capability;
 
 ->rest(
     'plugin/v1',
@@ -233,7 +236,9 @@ use Hoo\WordPressPluginFramework\Pipeline\Middlewares\MiddlewaresBuilder;
     controller(ItemsController::class, 'store'),
     Method::Post,
     fn (MiddlewaresBuilder $mw) => $mw
-        ->transaction(fn ($m) => $m)
+        ->currentUserCan(Capability::ManageWooCommerce)
+        ->verifyNonce('_wpnonce')
+        ->transaction()
         ->validate(fn ($v) => $v
             ->body('name',  fn ($r) => $r->string())
             ->body('email', fn ($r) => $r->string()->email())
@@ -243,15 +248,17 @@ use Hoo\WordPressPluginFramework\Pipeline\Middlewares\MiddlewaresBuilder;
 
 Available middlewares:
 
-| Method | Purpose |
-|---|---|
-| `transaction(Closure)` | wrap the handler in a database transaction |
-| `logExecutionTime(Closure)` | log how long the handler took |
-| `validate(Closure)` | validate request input (see below) |
-| `currentUserCan(Closure)` | authorize via a capability |
-| `verifyNonce(Closure)` | verify a WordPress nonce |
+| Method | Signature | Purpose |
+|---|---|---|
+| `transaction()` | `transaction(): static` | wrap the handler in a database transaction |
+| `logExecutionTime()` | `logExecutionTime(): static` | log how long the handler took |
+| `validate(Closure)` | `validate(Closure $closure): static` | validate request input (see below) |
+| `currentUserCan(Capability)` | `currentUserCan(Capability $capability): static` | authorize via a capability |
+| `verifyNonce(string, …)` | `verifyNonce(string $name, string\|int $action = -1): static` | verify a WordPress nonce |
 
-> ⚠️ `currentUserCan` and `verifyNonce` are constructed by the builder with no arguments and configured through their closure; confirm those middlewares expose the fluent configuration they expect before relying on them (see *Notes*).
+- `currentUserCan` takes a `Capability` enum case (`Hoo\WordPressPluginFramework\Pipeline\Middlewares\CurrentUserCan\Capability\Capability`) — add cases there for the capabilities your plugin checks.
+- `verifyNonce` takes the request key the nonce lives under (`$name`, read from body **or** query) and the optional nonce `$action`; it throws `Forbidden` if the nonce is missing or invalid.
+- `transaction` / `logExecutionTime` take no arguments — they're resolved from the container via their factories.
 
 ### Validation
 
@@ -347,4 +354,4 @@ Booting is **not** a helper — it lives on the `Application` class: `Hoo\WordPr
 ## Notes
 
 - **Namespace rename is mandatory** for multi-plugin safety — handled automatically by [`scripts/setup.php`](scripts/setup.php) when you `composer create-project`. See [Creating a new plugin](#creating-a-new-plugin).
-- **`currentUserCan` / `verifyNonce`**: the `MiddlewaresBuilder` instantiates these middlewares with no constructor arguments and expects the closure to configure them fluently. If the underlying middleware still requires constructor arguments, that pairing needs reconciling before use.
+- **Server request/response UUIDs**: every server `RequestInterface`/`ResponseInterface` carries a `uuid(): UuidInterface` (a `Stringable`) — see [Request/UUIDs](#controllers--actions). Use it to correlate a request with its response in logs.
