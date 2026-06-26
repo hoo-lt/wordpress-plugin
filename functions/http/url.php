@@ -1,6 +1,6 @@
 <?php
 
-namespace Hoo\WordPressPlugin\Cache;
+namespace Hoo\WordPressPlugin\Http\Url;
 
 use Hoo\WordPressPlugin\Application\Application;
 use Hoo\WordPressPluginFramework\{

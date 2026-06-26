@@ -66,14 +66,24 @@ wordpress-plugin/
 composer install
 ```
 
-`composer.json` must autoload the helpers as a `files` entry, or `hook()`/`route()`/`container()` won't exist (the `Application` class is PSR-4 autoloaded from `src/`, so it needs no `files` entry):
+The helpers live in `functions/`, **one file per domain** (each in its own sub-namespace), and every file must be listed as a `files` autoload entry or its functions won't exist. The `Application` class is PSR-4 autoloaded from `src/`, so it needs no `files` entry:
 
 ```json
 "autoload": {
     "psr-4": { "Hoo\\WordPressPlugin\\": "src/" },
-    "files": [ "functions/functions.php" ]
+    "files": [
+        "functions/http/client.php",
+        "functions/http/server.php",
+        "functions/http/url.php",
+        "functions/cache.php",
+        "functions/database.php",
+        "functions/view.php",
+        "functions/functions.php"
+    ]
 }
 ```
+
+> Drop a new helper file in `functions/` → add it to this `files` list → `composer dump-autoload`. (Unlike PSR-4 classes, `files` autoloads are **not** auto-discovered.)
 
 After editing autoload config: `composer dump-autoload`.
 
@@ -136,7 +146,11 @@ controller(ItemsController::class, 'index')   // -> Closure: resolve ItemsContro
 action(RegisterTaxonomies::class)             // -> Closure: resolve + call RegisterTaxonomies::__invoke when fired
 ```
 
-Route handlers receive a `RequestInterface`; hook handlers receive the WordPress hook arguments (the filtered value for filters, etc.).
+**Every handler receives a `RequestInterface` as its first argument** — routes *and* hooks. The framework injects it before any other arguments (see [Action/Hook.php](../wordpress-plugin-framework/src/Hooker/Hooks/Action/Hook.php) / [Filter/Hook.php](../wordpress-plugin-framework/src/Hooker/Hooks/Filter/Hook.php), which call the handler as `($request, ...$args)`). So:
+
+- **Route handler:** `index(RequestInterface $request): ResponseInterface`
+- **Action handler:** `(RequestInterface $request, ...$hookArgs)` — request first, then the WordPress action args.
+- **Filter handler:** `(RequestInterface $request, mixed $value, ...$hookArgs): mixed` — request first, then the filtered value (which you must return).
 
 ---
 
@@ -294,9 +308,13 @@ These defaults are baked into the definition files — update them when you rena
 
 ---
 
-## Helper reference (`functions/functions.php`)
+## Helper reference (`functions/`)
 
-Booting lives on the `Application` class, not in the helpers: `Hoo\WordPressPlugin\Application\Application::boot(string $dir, string $file)`.
+Helpers are split across files by domain, each in its own sub-namespace. Import them with `use function` from the right namespace.
+
+Booting is **not** a helper — it lives on the `Application` class: `Hoo\WordPressPlugin\Application\Application::boot(string $dir, string $file)`.
+
+**`functions/functions.php` — `Hoo\WordPressPlugin`** (core)
 
 | Helper | Returns |
 |---|---|
@@ -307,9 +325,22 @@ Booting lives on the `Application` class, not in the helpers: `Hoo\WordPressPlug
 | `route(): RoutesBuilderInterface` | a fresh route builder |
 | `controller(string $class, string $method): Closure` | lazy closure: resolves `$class`, calls `$method(...)` on invocation |
 | `action(string $class): Closure` | lazy closure: resolves `$class`, calls `__invoke(...)` on invocation |
-| `cache(): CacheInterface` | the cache service |
-| `database(): DatabaseInterface` | the database service |
-| `view(string $view, ?ModelInterface $model = null): ViewInterface` | a rendered view |
+
+**Domain helpers** (each in its own namespace + file)
+
+| Helper | Namespace / file | Returns |
+|---|---|---|
+| `cache(): CacheInterface` | `Hoo\WordPressPlugin\Cache` — `cache.php` | the cache service |
+| `database(): DatabaseInterface` | `Hoo\WordPressPlugin\Database` — `database.php` | the database service |
+| `view(string $view, ?ModelInterface $model = null): ViewInterface` | `Hoo\WordPressPlugin\View` — `view.php` | a rendered view |
+| `client(): ClientInterface` | `Hoo\WordPressPlugin\Http\Client` — `http/client.php` | the outbound HTTP client |
+| `request(string $method, string $url, ?array $headers = null, array\|string\|null $body = null): RequestInterface` | `Hoo\WordPressPlugin\Http\Client` — `http/client.php` | an outbound client request |
+| `response(int $statusCode, ?array $headers = null, array\|string\|null $body = null): ResponseInterface` | `Hoo\WordPressPlugin\Http\Client` — `http/client.php` | an outbound client response |
+| `request(string $method, string $url, ?array $headers = null, array\|string\|null $body = null): RequestInterface` | `Hoo\WordPressPlugin\Http\Server` — `http/server.php` | a server request |
+| `response(int $statusCode, ?array $headers = null, array\|string\|null $body = null): ResponseInterface` | `Hoo\WordPressPlugin\Http\Server` — `http/server.php` | a server response |
+| `url(string $url): UrlInterface` | `Hoo\WordPressPlugin\Http\Url` — `http/url.php` | a parsed URL |
+
+> `Http\Client` and `Http\Server` both expose `request()`/`response()` with identical signatures but different return types — import the one you mean: `use function Hoo\WordPressPlugin\Http\Server\request;`.
 
 ---
 
